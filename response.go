@@ -1,9 +1,9 @@
 package okhttp
 
-import "net/http"
+import "io"
 
-type ResponseOption func(req *ResponseCtx)
-
-type ResponseCtx struct {
-	r http.Response
+// ResponseDecoder 响应解码接口
+type ResponseDecoder interface {
+	Decode(r io.Reader) error
+	Value() interface{}
 }
