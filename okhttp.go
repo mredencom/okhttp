@@ -158,16 +158,19 @@ func (ok *Okhttp) Request() (*http.Request, error) {
 	return req, err
 }
 
+// SetHeader
 func (ok *Okhttp) SetHeader(key, value string) *Okhttp {
 	ok.header.Set(key, value)
 	return ok
 }
 
+// AddHeader
 func (ok *Okhttp) AddHeader(key, value string) *Okhttp {
 	ok.header.Add(key, value)
 	return ok
 }
 
+// SetBasicAuth
 func (ok *Okhttp) SetBasicAuth(username, password string) *Okhttp {
 	return ok.SetHeader("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
 }
