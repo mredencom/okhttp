@@ -1,176 +1,107 @@
 package okhttp
 
 import (
-	"encoding/base64"
-	"io"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
-type DoOk interface {
-	Do(req *http.Request) (*http.Response, error)
-}
+type Handler func(*Response)
 
-// Okhttp 对象
-type Okhttp struct {
-	// 方法
-	method string
-	// url
-	rawURL string
-	// 请求头
-	header http.Header
-	// cookie
-	cookie []http.Cookie
-	// 响应解码
-	responseDecoder ResponseDecoder
-	// body 接口
-	body Body
-	// query
-	query []interface{}
-	// client
-	httpClient DoOk
-	// debug
-	debug bool
-}
-
-// New 新建一个对象
-func New() *Okhttp {
-	return &Okhttp{
-		method:          http.MethodGet,
-		header:          make(http.Header),
-		cookie:          make([]http.Cookie, 0),
-		query:           make([]interface{}, 0),
-		httpClient:      http.DefaultClient,
-		responseDecoder: &JSONDecoder{},
-		debug:           false,
+// NewRequest 建立一个请求
+func NewRequest(method string, uri string) (r *Request, err error) {
+	switch strings.ToUpper(method) {
+	case http.MethodGet:
+		method = http.MethodGet
+		break
+	case http.MethodPost:
+		method = http.MethodPost
+		break
+	case http.MethodPut:
+		method = http.MethodPut
+		break
+	case http.MethodDelete:
+		method = http.MethodDelete
+		break
+	case http.MethodHead:
+		method = http.MethodHead
+		break
+	case http.MethodPatch:
+		method = http.MethodPatch
+		break
+	case http.MethodOptions:
+		method = http.MethodOptions
+		break
+	case http.MethodTrace:
+		method = http.MethodTrace
+		break
+	case http.MethodConnect:
+		method = http.MethodConnect
+		break
+	default:
+		err = NoMatchHttpMethod
+		break
 	}
-}
-
-func (ok *Okhttp) Client(c *http.Client) *Okhttp {
-	if c == nil {
-		return ok.DoOk(http.DefaultClient)
-	}
-	return ok.DoOk(c)
-}
-
-func (ok *Okhttp) DoOk(doer DoOk) *Okhttp {
-	if doer == nil {
-		ok.httpClient = http.DefaultClient
-	} else {
-		ok.httpClient = doer
-	}
-	return ok
-}
-
-// BaseUrl 设置baseurl
-func (ok *Okhttp) BaseUrl(rawURL string) *Okhttp {
-	ok.rawURL = rawURL
-	return ok
-}
-
-// Path 解析 path
-func (ok *Okhttp) Path(path string) *Okhttp {
-	baseURL, baseErr := url.Parse(ok.rawURL)
-	if baseErr != nil {
-		return ok
-	}
-	pathURL, pathErr := url.Parse(path)
-	if pathErr == nil {
-		return ok
-	}
-	ok.rawURL = baseURL.ResolveReference(pathURL).String()
-	return ok
-}
-
-func (ok *Okhttp) Get(pathURL string) *Okhttp {
-	ok.method = http.MethodGet
-	return ok.Path(pathURL)
-}
-
-// Head  head
-func (ok *Okhttp) Head(pathURL string) *Okhttp {
-	ok.method = http.MethodHead
-	return ok.Path(pathURL)
-}
-
-// Post post
-func (ok *Okhttp) Post(pathURL string) *Okhttp {
-	ok.method = "POST"
-	return ok.Path(pathURL)
-}
-
-// Put put
-func (ok *Okhttp) Put(pathURL string) *Okhttp {
-	ok.method = http.MethodPut
-	return ok.Path(pathURL)
-}
-
-// Patch patch
-func (ok *Okhttp) Patch(pathURL string) *Okhttp {
-	ok.method = http.MethodPatch
-	return ok.Path(pathURL)
-}
-
-// Delete delete
-func (ok *Okhttp) Delete(pathURL string) *Okhttp {
-	ok.method = http.MethodDelete
-	return ok.Path(pathURL)
-}
-
-// Options option
-func (ok *Okhttp) Options(pathURL string) *Okhttp {
-	ok.method = http.MethodOptions
-	return ok.Path(pathURL)
-}
-
-// Trace trace
-func (ok *Okhttp) Trace(pathURL string) *Okhttp {
-	ok.method = http.MethodTrace
-	return ok.Path(pathURL)
-}
-
-// Connect connect
-func (ok *Okhttp) Connect(pathURL string) *Okhttp {
-	ok.method = http.MethodConnect
-	return ok.Path(pathURL)
-}
-
-func (ok *Okhttp) Request() (*http.Request, error) {
-	reqURL, err := url.Parse(ok.rawURL)
+	// parse url
+	parse, err := url.Parse(uri)
 	if err != nil {
 		return nil, err
 	}
-
-	var body io.Reader
-	if ok.body != nil {
-		body, err = ok.body.Body()
-		if err != nil {
-			return nil, err
-		}
+	// header
+	header := http.Header{}
+	header.Set("User-Agent", fmt.Sprintf("Okhttp/%s", Version))
+	r = &Request{
+		method:      method,
+		url:         parse,
+		header:      header,
+		debug:       false,
+		isPrintBody: false,
 	}
-	req, err := http.NewRequest(ok.method, reqURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-	// 处理header
-	addHeaders(req, ok.header)
-	// 处理cookie
-	return req, err
+	return
 }
 
-// SetHeader
-func (ok *Okhttp) SetHeader(key, value string) *Okhttp {
-	ok.header.Set(key, value)
-	return ok
+// Get created a get request
+func Get(uri string) (*Request, error) {
+	return NewRequest(http.MethodGet, uri)
 }
 
-// AddHeader
-func (ok *Okhttp) AddHeader(key, value string) *Okhttp {
-	ok.header.Add(key, value)
-	return ok
+// Post created a post request
+func Post(uri string) (*Request, error) {
+	return NewRequest(http.MethodPost, uri)
 }
 
-// SetBasicAuth
-func (ok *Okhttp) SetBasicAuth(username, password string) *Okhttp {
-	return ok.SetHeader("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
+// Put created a put request
+func Put(uri string) (*Request, error) {
+	return NewRequest(http.MethodPut, uri)
+}
+
+// Delete created a delete request
+func Delete(uri string) (*Request, error) {
+	return NewRequest(http.MethodDelete, uri)
+}
+
+// Head created a head request
+func Head(uri string) (*Request, error) {
+	return NewRequest(http.MethodHead, uri)
+}
+
+// Patch created a patch request
+func Patch(uri string) (*Request, error) {
+	return NewRequest(http.MethodPatch, uri)
+}
+
+// Options created a options request
+func Options(uri string) (*Request, error) {
+	return NewRequest(http.MethodOptions, uri)
+}
+
+// Trace created a trace request
+func Trace(uri string) (*Request, error) {
+	return NewRequest(http.MethodTrace, uri)
+}
+
+// Connect created a connect request
+func Connect(uri string) (*Request, error) {
+	return NewRequest(http.MethodConnect, uri)
 }
