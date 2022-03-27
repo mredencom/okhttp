@@ -2,6 +2,7 @@ package okhttp
 
 import (
 	"fmt"
+	"github.com/mredencom/okhttp/log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -10,7 +11,7 @@ import (
 type Handler func(*Response)
 
 // NewRequest 建立一个请求
-func NewRequest(method string, uri string) (r *Request, err error) {
+func NewRequest(method, uri string) (r *Request, err error) {
 	switch strings.ToUpper(method) {
 	case http.MethodGet:
 		method = http.MethodGet
@@ -52,11 +53,13 @@ func NewRequest(method string, uri string) (r *Request, err error) {
 	header := http.Header{}
 	header.Set("User-Agent", fmt.Sprintf("Okhttp/%s", Version))
 	r = &Request{
-		method:      method,
-		url:         parse,
-		header:      header,
-		debug:       false,
-		isPrintBody: false,
+		method:        method,
+		url:           parse,
+		header:        header,
+		allowRedirect: true,
+		debug:         false,
+		isPrintBody:   false,
+		l:             log.NewLogger(0),
 	}
 	return
 }

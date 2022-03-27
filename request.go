@@ -2,15 +2,18 @@ package okhttp
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"io/ioutil"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/http/httputil"
 	"net/url"
 	"time"
 
+	"github.com/mredencom/okhttp/log"
 	"golang.org/x/net/publicsuffix"
 )
 
@@ -18,25 +21,28 @@ import (
 var DefaultRequestTimeOut = 5 * time.Second
 
 type Request struct {
-	method      string
-	url         *url.URL
-	header      http.Header
-	cookies     []*http.Cookie
-	body        io.Reader
-	timeout     time.Duration
-	debug       bool
-	isPrintBody bool
+	method        string
+	url           *url.URL
+	header        http.Header
+	cookies       []*http.Cookie
+	body          io.Reader
+	timeout       time.Duration
+	proxy         func(*http.Request) (*url.URL, error)
+	allowRedirect bool
+	debug         bool
+	isPrintBody   bool
+	l             *log.Logger
 }
 
-//Debug set debug mode
-func (r *Request) Debug(d bool) *Request {
+//SetDebug set debug mode
+func (r *Request) SetDebug(d bool) *Request {
 	r.debug = d
 	return r
 }
 
-// PrintBody set debug mode
+// SetPrintBody set debug mode
 // rely Debug
-func (r *Request) PrintBody(d bool) *Request {
+func (r *Request) SetPrintBody(d bool) *Request {
 	r.isPrintBody = d
 	return r
 }
@@ -66,6 +72,12 @@ func (r *Request) SetTimeOut(d time.Duration) *Request {
 	return r
 }
 
+// SetRedirects set default request allow redirects
+func (r *Request) SetRedirects(i bool) *Request {
+	r.allowRedirect = i
+	return r
+}
+
 // GetHeaders get all request header
 func (r *Request) GetHeaders() H {
 	return doHeader(r.header)
@@ -74,6 +86,17 @@ func (r *Request) GetHeaders() H {
 // SetHeader set request header
 func (r *Request) SetHeader(key, value string) *Request {
 	r.header.Set(key, value)
+	return r
+}
+
+// SetHeaders multi set request header
+func (r *Request) SetHeaders(headers map[string]string) *Request {
+	if headers == nil {
+		return r
+	}
+	for k, v := range headers {
+		r.SetHeader(k, v)
+	}
 	return r
 }
 
@@ -92,6 +115,16 @@ func (r *Request) SetUserAgent(value string) *Request {
 // SetReferer set a referer request header
 func (r *Request) SetReferer(referer string) *Request {
 	r.SetHeader("Referer", referer)
+	return r
+}
+
+// SetProxy set a referer request header
+func (r *Request) SetProxy(proxyURL string) *Request {
+	parse, err := url.Parse(proxyURL)
+	if err != nil {
+		panic("illegal url")
+	}
+	r.proxy = http.ProxyURL(parse)
 	return r
 }
 
@@ -118,10 +151,18 @@ func (r *Request) SetForm(v url.Values) *Request {
 func (r *Request) SetJSON(v interface{}) *Request {
 
 	r.SetHeader("Content-Type", "application/json")
-	// todo err
-	body, _ := json.Marshal(v)
-
+	body, err := json.Marshal(v)
+	if err != nil {
+		panic("json encode err " + err.Error())
+	}
 	return r.SetBody(bytes.NewBuffer(body))
+}
+
+// SetBasicAuth set username and password to header
+func (r *Request) SetBasicAuth(username, password string) *Request {
+
+	r.SetHeader("Authorization", "Basic "+base64.StdEncoding.EncodeToString([]byte(username+":"+password)))
+	return r
 }
 
 // Do returns response
@@ -136,14 +177,13 @@ func (r *Request) Do() (*Response, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	for k := range r.header {
 		request.Header.Add(k, r.header.Get(k))
 	}
 
 	if r.debug {
-		httputil.DumpRequest(request, r.isPrintBody)
-		//todo log
+		dumpRequest, _ := httputil.DumpRequest(request, r.isPrintBody)
+		r.l.Info(string(dumpRequest))
 	}
 	response, err := client.Do(request)
 	if err != nil {
@@ -164,12 +204,30 @@ func (r *Request) client() (*http.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	jar.SetCookies(r.url, r.cookies)
+
 	client := &http.Client{
-		Transport: http.DefaultTransport,
-		Jar:       jar,
-		Timeout:   r.timeout,
+		Transport: &http.Transport{
+			// 设置代理
+			Proxy: r.proxy,
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		},
+		Jar:     jar,
+		Timeout: r.timeout,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if !r.allowRedirect {
+				return http.ErrUseLastResponse
+			}
+			return nil
+		},
 	}
 
 	if len(r.cookies) > 0 {
@@ -195,8 +253,8 @@ func (r *Request) response(response *http.Response) (*Response, error) {
 	}
 
 	if r.debug {
-		httputil.DumpResponse(response, r.isPrintBody)
-		//todo log
+		dumpResponse, _ := httputil.DumpResponse(response, r.isPrintBody)
+		r.l.Info(string(dumpResponse))
 	}
 
 	return res, nil
